@@ -208,3 +208,46 @@ def test_fee_raises_value_error_for_invalid_credit_totals(total):
     # FEE-I1 and FEE-I2
     with pytest.raises(ValueError):
         calculate_registration_fee(total)
+
+
+
+
+
+
+# Section 7 - Fixture-driven test
+
+@pytest.mark.positive
+def test_valid_student_baseline_is_allowed_to_register(valid_student):
+    assert can_register(**valid_student) is True
+
+
+@pytest.mark.negative
+def test_valid_student_rejected_once_prerequisite_removed(valid_student):
+    valid_student["prerequisite_met"] = False   # changes only this test's copy
+    assert can_register(**valid_student) is False
+
+
+@pytest.mark.negative
+def test_valid_student_rejected_when_course_pushes_load_over_18(valid_student):
+    valid_student["current_credits"] = 15
+    valid_student["course_credits"] = 4
+    assert can_register(**valid_student) is False
+
+
+@pytest.mark.resource
+def test_registration_outcomes_can_be_logged_to_temp_file(registration_log):
+    """Uses the yield fixture: a temp file created before, removed after."""
+    scenarios = [(9, 3, True), (15, 4, True), (0, 1, False)]
+    with registration_log.open("a") as log:
+        for current, course, prereq in scenarios:
+            allowed = can_register(current, course, prereq)
+            fee = calculate_registration_fee(current + course) if allowed else ""
+            log.write(f"{current},{course},{prereq},{allowed},{fee}\n")
+
+    rows = registration_log.read_text().strip().splitlines()
+    assert rows[0].startswith("current_credits")          # header from setup
+    assert rows[1:] == [
+        "9,3,True,True,1200.0",
+        "15,4,True,False,",
+        "0,1,False,False,",
+    ]

@@ -16,4 +16,5 @@ markers = [
     "positive: tests for valid / expected-success scenarios",
     "negative: tests for invalid input / expected-failure scenarios",
     "boundary: tests targeting boundary values identified via boundary-value analysis",
+    "resource: tests that use a temporary on-disk resource (yield fixture with cleanup)",
 ]
