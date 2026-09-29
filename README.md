@@ -203,3 +203,99 @@ because the behavior is identical, so it is not a real
 defect. It shows that **13**, the first value where the two rates give different
 results, is the value that actually verifies the rate change. That is why 11, 12
 and 13 are all tested.
+
+
+
+
+
+## Sections 6–7: Where each requirement is implemented
+
+All tests are in `tests/test_registration.py`; fixtures are in `tests/conftest.py`.
+
+| Requirement | Implemented in |
+|---|---|
+| 6(a) Positive registration tests | `test_registration_allowed_for_valid_load_with_prerequisite_met`, `test_registration_allowed_for_every_valid_course_size_when_load_is_low`, `test_valid_student_baseline_is_allowed_to_register` |
+| 6(b) Negative registration tests | `test_registration_rejected_when_prerequisite_not_met`, `test_registration_rejected_when_current_credits_outside_0_to_15`, `test_registration_rejected_when_course_credits_outside_1_to_4`, `test_registration_rejected_when_total_credits_exceed_18`, `test_registration_rejected_when_multiple_rules_broken` |
+| 6(c) Fee below / at / above 12 | `test_fee_calculated_below_at_and_above_12_credit_transition`, `test_fee_boundaries` |
+| 6(d) Invalid fee inputs with `pytest.raises(ValueError)` | `test_fee_raises_value_error_just_outside_valid_range`, `test_fee_raises_value_error_for_invalid_credit_totals` |
+| 7(a) `@pytest.mark.parametrize` | Used for every group of similar cases, including all equivalence-class and boundary tests. Each case has a readable `ids=` label. |
+| 7(b) Reusable fixture used by ≥ 2 tests | `valid_student` in `conftest.py`, used by 3 tests |
+| 7(c) Yield fixture with setup and cleanup | `registration_log` in `conftest.py`, used by `test_registration_outcomes_can_be_logged_to_temp_file` |
+
+`registration_log` creates a uniquely named temporary folder with a CSV file,
+`yield`s the file to the test, then deletes the folder. The cleanup code is in a
+`finally` block after the `yield`, so pytest runs it whether the test passes or
+fails.
+
+---
+
+## Section 8: Organizing and running the test suite
+
+### 8(a) Markers
+
+The four pre-registered markers are applied, plus one I added (registered in `pyproject.toml`):
+
+| Marker | Meaning | Tests |
+|---|---|---|
+| `unit` | every test in the file (applied module-wide with `pytestmark`) | 57 |
+| `positive` | valid / expected-success scenarios | 13 |
+| `negative` | invalid input / expected-failure scenarios | 20 |
+| `boundary` | boundary values from Section 5 | 25 |
+| `resource` | *(added)* uses the temporary on-disk yield fixture | 1 |
+
+A test can carry more than one marker. For example, the fee tests at −1 and 19
+are both `negative` and `boundary`.
+
+### 8(b) Commands
+
+Run from the project root, with the virtual environment activated:
+
+```
+pytest                              # full suite (57 tests)
+pytest -v                           # full suite, one line per test case
+pytest -m positive                  # positive tests only
+pytest -m negative                  # negative tests only
+pytest -m boundary                  # boundary-value tests only
+pytest -m "negative and boundary"   # invalid values just outside a valid range
+pytest -m "not boundary"            # everything except the boundary tests
+pytest -s -m resource               # shows the fixture's SETUP / CLEANUP messages
+```
+
+### 8(c) Evidence that the full suite passes
+
+```
+(.venv) PS E:\assignment-1> pytest
+===================================== test session starts ======================================
+platform win32 -- Python 3.13.5, pytest-9.1.1, pluggy-1.6.0
+rootdir: E:\assignment-1
+configfile: pyproject.toml
+testpaths: tests
+collected 57 items
+
+tests\test_registration.py .........................................................      [100%]
+
+====================================== 57 passed in 0.30s ======================================
+```
+
+Setup and cleanup of the yield fixture (`pytest -s -m resource`):
+
+```
+[SETUP] created temporary log at C:\Users\USER\AppData\Local\Temp\registration_log_aa72jyyq\registrations.csv
+.
+[CLEANUP] removed C:\Users\USER\AppData\Local\Temp\registration_log_aa72jyyq (exists afterwards: False)
+=============================== 1 passed, 56 deselected in 0.03s ===============================
+```
+
+### How the suite avoids test dependencies and state leakage
+
+- **Function-scoped fixtures.** `valid_student` builds a new dictionary for every
+  test. When a test changes it (e.g. sets `prerequisite_met = False`), only that
+  test's copy is affected. There is no shared, module-level mutable data.
+- **Pure functions under test.** `can_register` and `calculate_registration_fee`
+  keep no state between calls, so calling them in one test cannot affect another.
+- **Isolated temporary resource.** `registration_log` gives each test its own
+  uniquely named folder (`tempfile.mkdtemp`) and always deletes it afterwards, so
+  nothing is left on disk for a later test to find.
+- **No ordering assumptions.** Every test sets up everything it needs itself and
+  never relies on another test having run first, so the tests can run in any
+  order or individually (e.g. `pytest -m boundary`) and still pass.
