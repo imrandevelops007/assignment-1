@@ -131,3 +131,75 @@ on its own, so it must be tested explicitly.
   CUR-I2, and (9, 3, False) tests only PRE-I1.
 - This reduces an effectively unlimited input space to about 14 representative
   values, while still exercising every rule in the specification.
+
+
+  
+
+
+## Section 5: Boundary-Value Analysis
+
+### 5(a) + 5(b) Boundaries, neighboring values, and expected behavior
+
+Each boundary is tested at **just below / on / just above**. The other inputs are
+held at safe valid values so only the boundary under test can change the result:
+`course_credits = 1` when testing current-credit edges, `current_credits = 5` when
+testing course-credit edges, and `prerequisite_met = True` throughout.
+
+**`can_register`**
+
+| Boundary | Test value | Expected | Reason |
+|---|---|---|---|
+| `current_credits` lower edge (0) | −1 | `False` | below valid range |
+| | **0** | `True` | minimum valid value |
+| | 1 | `True` | just inside |
+| `current_credits` upper edge (15) | 14 | `True` | just inside |
+| | **15** | `True` | maximum valid value (15 + 1 = 16 ≤ 18) |
+| | 16 | `False` | above valid range |
+| `course_credits` lower edge (1) | 0 | `False` | below valid range |
+| | **1** | `True` | minimum valid value |
+| | 2 | `True` | just inside |
+| `course_credits` upper edge (4) | 3 | `True` | just inside |
+| | **4** | `True` | maximum valid value |
+| | 5 | `False` | above valid range |
+| Resulting load edge (18) | 13 + 4 = 17 | `True` | just under the cap |
+| | **14 + 4 = 18** | `True` | exactly on the cap |
+| | **15 + 3 = 18** | `True` | on the cap, reached from the maximum current load |
+| | 15 + 4 = 19 | `False` | exceeds 18 |
+
+**`calculate_registration_fee`**
+
+| Boundary | Test value | Expected | Reason |
+|---|---|---|---|
+| Valid-range lower edge (0) | −1 | `ValueError` | below valid range |
+| | **0** | $0 | minimum valid value |
+| | 1 | $100 | just inside |
+| Rate transition (12) | 11 | $1,100 | last credits fully at $100 |
+| | **12** | $1,200 | all 12 credits at $100 |
+| | 13 | $1,275 | 1,200 + 1 × 75, first credit at $75 |
+| Valid-range upper edge (18) | 17 | $1,575 | 1,200 + 5 × 75 |
+| | **18** | $1,650 | maximum valid value: 1,200 + 6 × 75 |
+| | 19 | `ValueError` | above valid range |
+
+### 5(c) How a wrong comparison operator would be revealed
+
+An off-by-one operator mistake only changes behavior **at the boundary value itself**.
+Every mid-range value from Section 4 still gives the correct result, so only a
+boundary test can expose the defect. Examples:
+
+- Writing `0 < current_credits` instead of `0 <= current_credits` would wrongly
+  reject a student with 0 credits. The test at **current = 0** (expected `True`)
+  would fail.
+- Writing `course_credits < 4` instead of `<= 4` would reject every 4-credit
+  course. The test at **course = 4** would fail.
+- Writing `total >= 18` instead of `total > 18` would reject a load of exactly 18.
+  The tests at **14 + 4** and **15 + 3** would fail.
+- Writing `0 <= total_credits < 18` for the fee would make 18 credits raise
+  `ValueError`. The test at **total = 18** (expected $1,650) would fail.
+
+**The fee transition at 12 is a special case.** If `total_credits <= 12` were
+mistakenly written as `< 12`, the value 12 would go through the $75 branch and give
+1,200 + 0 × 75 = $1,200, which is the same answer. No test can detect this change
+because the behavior is identical, so it is not a real
+defect. It shows that **13**, the first value where the two rates give different
+results, is the value that actually verifies the rate change. That is why 11, 12
+and 13 are all tested.
